@@ -1,0 +1,12 @@
+requests
+pandas
+beautifulsoup4
+python-dotenv
+tqdm
+duckduckgo-search
+duckdb
+dnspython
+phonenumbers
+fastapi
+uvicorn[standard]
+pydantic
