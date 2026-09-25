@@ -29,8 +29,47 @@ CREATE TABLE IF NOT EXISTS businesses (
     lng REAL,
     confidence REAL,
     website TEXT,
+    booking_platform TEXT,
+    site_scanned_at TEXT,
+    rating REAL,
+    review_count INTEGER,
+    place_id TEXT,
+    places_fetched_at TEXT,
     has_active_license INTEGER NOT NULL DEFAULT 0,
     name_frequency INTEGER NOT NULL DEFAULT 1,
+    pa_registration_status TEXT,
+    pa_filing_number TEXT,
+    pa_registration_type TEXT,
+    business_creation_date TEXT,
+    philly_cal_status TEXT,
+    philly_cal_license_num TEXT,
+    nj_registration_status TEXT,
+    de_license_status TEXT,
+    de_license_number TEXT,
+    de_license_valid_to TEXT,
+    registration_checked_at TEXT,
+    registration_source TEXT,
+    pa_sales_tax_status TEXT,
+    pa_sales_tax_trade_name TEXT,
+    pa_sales_tax_address TEXT,
+    pa_sales_tax_license_type TEXT,
+    pa_sales_tax_expiration TEXT,
+    pa_sales_tax_checked_at TEXT,
+    nppes_status TEXT,
+    nppes_npi TEXT,
+    nppes_org_name TEXT,
+    nppes_address TEXT,
+    nppes_taxonomy TEXT,
+    nppes_entity_type TEXT,
+    nppes_checked_at TEXT,
+    philly_bli_status TEXT,
+    philly_bli_license_type TEXT,
+    philly_bli_address TEXT,
+    philly_bli_checked_at TEXT,
+    site_phone TEXT,
+    site_address TEXT,
+    site_hours TEXT,
+    site_structured_data TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -54,6 +93,9 @@ CREATE TABLE IF NOT EXISTS targets (
     business_id TEXT PRIMARY KEY,
     segment TEXT,
     icp_score REAL NOT NULL DEFAULT 0,
+    revenue_tier TEXT CHECK (revenue_tier IN ('A', 'B', 'C', 'U', 'X')),
+    category_path TEXT,
+    classification_source TEXT CHECK (classification_source IN ('leaf', 'l2', 'l1', 'fallback')),
     status TEXT NOT NULL DEFAULT 'new'
         CHECK (status IN ('new', 'working', 'meeting', 'won', 'dead')),
     do_not_contact INTEGER NOT NULL DEFAULT 0,
@@ -162,7 +204,7 @@ CREATE TABLE IF NOT EXISTS saved_views (
 
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL CHECK (kind IN ('enrich', 'verify', 'pull')),
+    kind TEXT NOT NULL CHECK (kind IN ('enrich', 'verify', 'pull', 'signals')),
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'running', 'completed', 'failed')),
     progress REAL NOT NULL DEFAULT 0,
@@ -171,6 +213,32 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS business_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    detail TEXT,
+    source TEXT NOT NULL DEFAULT 'site_scan',
+    detected_at TEXT NOT NULL,
+    UNIQUE (business_id, kind, value),
+    FOREIGN KEY (business_id) REFERENCES businesses(gers_id)
+);
+
+CREATE TABLE IF NOT EXISTS discovery (
+    business_id TEXT PRIMARY KEY,
+    after_hours TEXT,
+    current_tool TEXT,
+    hiring_front_desk INTEGER,
+    missed_calls TEXT,
+    answering_spend REAL,
+    updated_by INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (business_id) REFERENCES businesses(gers_id),
+    FOREIGN KEY (updated_by) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_contacts_business ON contacts(business_id);
@@ -184,6 +252,7 @@ CREATE INDEX IF NOT EXISTS idx_deals_business ON deals(business_id);
 CREATE INDEX IF NOT EXISTS idx_notes_business ON notes(business_id);
 CREATE INDEX IF NOT EXISTS idx_businesses_county ON businesses(county);
 CREATE INDEX IF NOT EXISTS idx_businesses_lat_lng ON businesses(lat, lng);
+CREATE INDEX IF NOT EXISTS idx_business_signals_business ON business_signals(business_id);
 """
 
 DEFAULT_OWNER = {
@@ -218,9 +287,133 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row["name"] == column for row in rows)
 
 
+def _table_sql(conn: sqlite3.Connection, table: str) -> str:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row["sql"] or "" if row else ""
+
+
+def _migrate_jobs_kind(conn: sqlite3.Connection) -> None:
+    sql = _table_sql(conn, "jobs")
+    if not sql or "'signals'" in sql:
+        return
+    conn.executescript(
+        """
+        CREATE TABLE jobs_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL CHECK (kind IN ('enrich', 'verify', 'pull', 'signals')),
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+            progress REAL NOT NULL DEFAULT 0,
+            message TEXT,
+            started_at TEXT,
+            finished_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO jobs_new SELECT * FROM jobs;
+        DROP TABLE jobs;
+        ALTER TABLE jobs_new RENAME TO jobs;
+        """
+    )
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     if not _column_exists(conn, "targets", "owner_id"):
         conn.execute("ALTER TABLE targets ADD COLUMN owner_id INTEGER")
+    if not _column_exists(conn, "targets", "revenue_tier"):
+        conn.execute("ALTER TABLE targets ADD COLUMN revenue_tier TEXT")
+    if not _column_exists(conn, "targets", "category_path"):
+        conn.execute("ALTER TABLE targets ADD COLUMN category_path TEXT")
+    if not _column_exists(conn, "targets", "classification_source"):
+        conn.execute("ALTER TABLE targets ADD COLUMN classification_source TEXT")
+    if not _column_exists(conn, "businesses", "booking_platform"):
+        conn.execute("ALTER TABLE businesses ADD COLUMN booking_platform TEXT")
+    if not _column_exists(conn, "businesses", "site_scanned_at"):
+        conn.execute("ALTER TABLE businesses ADD COLUMN site_scanned_at TEXT")
+    if not _column_exists(conn, "businesses", "rating"):
+        conn.execute("ALTER TABLE businesses ADD COLUMN rating REAL")
+    if not _column_exists(conn, "businesses", "review_count"):
+        conn.execute("ALTER TABLE businesses ADD COLUMN review_count INTEGER")
+    if not _column_exists(conn, "businesses", "place_id"):
+        conn.execute("ALTER TABLE businesses ADD COLUMN place_id TEXT")
+    if not _column_exists(conn, "businesses", "places_fetched_at"):
+        conn.execute("ALTER TABLE businesses ADD COLUMN places_fetched_at TEXT")
+    for column, ddl in (
+        ("pa_registration_status", "TEXT"),
+        ("pa_filing_number", "TEXT"),
+        ("pa_registration_type", "TEXT"),
+        ("business_creation_date", "TEXT"),
+        ("philly_cal_status", "TEXT"),
+        ("philly_cal_license_num", "TEXT"),
+        ("nj_registration_status", "TEXT"),
+        ("de_license_status", "TEXT"),
+        ("de_license_number", "TEXT"),
+        ("de_license_valid_to", "TEXT"),
+        ("registration_checked_at", "TEXT"),
+        ("registration_source", "TEXT"),
+        ("pa_sales_tax_status", "TEXT"),
+        ("pa_sales_tax_trade_name", "TEXT"),
+        ("pa_sales_tax_address", "TEXT"),
+        ("pa_sales_tax_license_type", "TEXT"),
+        ("pa_sales_tax_expiration", "TEXT"),
+        ("pa_sales_tax_checked_at", "TEXT"),
+        ("nppes_status", "TEXT"),
+        ("nppes_npi", "TEXT"),
+        ("nppes_org_name", "TEXT"),
+        ("nppes_address", "TEXT"),
+        ("nppes_taxonomy", "TEXT"),
+        ("nppes_entity_type", "TEXT"),
+        ("nppes_checked_at", "TEXT"),
+        ("philly_bli_status", "TEXT"),
+        ("philly_bli_license_type", "TEXT"),
+        ("philly_bli_address", "TEXT"),
+        ("philly_bli_checked_at", "TEXT"),
+        ("site_phone", "TEXT"),
+        ("site_address", "TEXT"),
+        ("site_hours", "TEXT"),
+        ("site_structured_data", "TEXT"),
+    ):
+        if not _column_exists(conn, "businesses", column):
+            conn.execute(f"ALTER TABLE businesses ADD COLUMN {column} {ddl}")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_booking ON businesses(booking_platform)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_places_fetched ON businesses(places_fetched_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_targets_revenue_tier ON targets(revenue_tier)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_pa_reg ON businesses(pa_registration_status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_philly_cal ON businesses(philly_cal_status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_registration_source ON businesses(registration_source)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_pa_sales_tax ON businesses(pa_sales_tax_status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_nppes ON businesses(nppes_status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_businesses_philly_bli ON businesses(philly_bli_status)"
+    )
+    for column, ddl in (
+        ("score_breakdown", "TEXT"),
+        ("data_coverage", "REAL"),
+        ("score_version", "INTEGER DEFAULT 4"),
+        ("unsubscribed_at", "TEXT"),
+    ):
+        if not _column_exists(conn, "targets", column):
+            conn.execute(f"ALTER TABLE targets ADD COLUMN {column} {ddl}")
+    _migrate_jobs_kind(conn)
 
 
 def seed_owner(conn: sqlite3.Connection) -> int:
@@ -276,6 +469,8 @@ def clear_stale_demo_seed(conn: sqlite3.Connection) -> None:
 
 def seed_sample_deals(conn: sqlite3.Connection, owner_id: int, limit: int = 12) -> None:
     """Seed deals on top-scored working/meeting targets for demo charts."""
+    from config import CALL_QUEUE_MIN_SCORE
+
     existing = conn.execute("SELECT COUNT(*) AS n FROM deals").fetchone()["n"]
     if existing >= limit:
         return
@@ -284,13 +479,13 @@ def seed_sample_deals(conn: sqlite3.Connection, owner_id: int, limit: int = 12) 
         """
         SELECT t.business_id, t.status, t.icp_score
         FROM targets t
-        WHERE t.segment != 'excluded'
-          AND t.icp_score >= 80
+        WHERE t.revenue_tier IN ('A', 'B', 'C', 'U')
+          AND t.icp_score >= ?
           AND t.business_id NOT IN (SELECT business_id FROM deals)
         ORDER BY t.icp_score DESC
         LIMIT ?
         """,
-        (limit,),
+        (CALL_QUEUE_MIN_SCORE, limit),
     ).fetchall()
     stages = ["new", "working", "working", "meeting", "meeting", "won"]
     for idx, row in enumerate(rows):
@@ -545,3 +740,71 @@ def get_business(conn: sqlite3.Connection, gers_id: str) -> Optional[sqlite3.Row
 def count_table(table: str, db_path: Path = DB_PATH) -> int:
     with connect(db_path) as conn:
         return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+
+
+def record_signal(
+    conn: sqlite3.Connection,
+    business_id: str,
+    kind: str,
+    value: str,
+    detail: str | None = None,
+    source: str = "site_scan",
+) -> None:
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO business_signals (business_id, kind, value, detail, source, detected_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(business_id, kind, value) DO UPDATE SET
+            detail = excluded.detail,
+            source = excluded.source,
+            detected_at = excluded.detected_at
+        """,
+        (business_id, kind, value, detail, source, now),
+    )
+
+
+def clear_business_signals(conn: sqlite3.Connection, business_id: str) -> None:
+    conn.execute("DELETE FROM business_signals WHERE business_id = ?", (business_id,))
+
+
+def upsert_discovery(
+    conn: sqlite3.Connection,
+    business_id: str,
+    fields: dict[str, Any],
+    user_id: int | None = None,
+) -> None:
+    allowed = {
+        "after_hours",
+        "current_tool",
+        "hiring_front_desk",
+        "missed_calls",
+        "answering_spend",
+    }
+    payload = {k: v for k, v in fields.items() if k in allowed and v is not None and v != ""}
+    if not payload:
+        return
+
+    now = utc_now()
+    existing = conn.execute(
+        "SELECT business_id FROM discovery WHERE business_id = ?",
+        (business_id,),
+    ).fetchone()
+
+    if existing:
+        assignments = ", ".join(f"{key} = ?" for key in payload)
+        conn.execute(
+            f"""
+            UPDATE discovery
+            SET {assignments}, updated_by = ?, updated_at = ?
+            WHERE business_id = ?
+            """,
+            [*payload.values(), user_id, now, business_id],
+        )
+    else:
+        cols = ["business_id", *payload.keys(), "updated_by", "created_at", "updated_at"]
+        placeholders = ", ".join("?" * len(cols))
+        conn.execute(
+            f"INSERT INTO discovery ({', '.join(cols)}) VALUES ({placeholders})",
+            [business_id, *payload.values(), user_id, now, now],
+        )

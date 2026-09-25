@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import analytics, campaigns, enrich, leads, map_router, me, pipeline, queue, search, stats, views
+from api.routers import analytics, campaigns, enrich, leads, map_router, me, meta, pipeline, queue, search, stats, views
 
 app = FastAPI(
     title="Philly Outreach CRM",
@@ -22,6 +22,7 @@ app.add_middleware(
 
 app.include_router(me.router, prefix="/api", tags=["me"])
 app.include_router(stats.router, prefix="/api", tags=["stats"])
+app.include_router(meta.router, prefix="/api", tags=["meta"])
 app.include_router(queue.router, prefix="/api", tags=["queue"])
 app.include_router(leads.router, prefix="/api", tags=["leads"])
 app.include_router(map_router.router, prefix="/api", tags=["map"])

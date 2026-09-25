@@ -10,15 +10,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from category_tiers import QUEUE_ELIGIBLE_WHERE, QUEUE_TIER_ORDER
 from config import CALL_QUEUE_MIN_SCORE, DATA_DIR, SENDABLE_VERIFY_STATUSES
 from db import DB_PATH, connect, init_db
 from verify import verification_summary
 
 EXPORT_DIR = DATA_DIR / "exports"
 
-CAMPAIGN_TARGET_WHERE = """
+CAMPAIGN_TARGET_WHERE = f"""
     t.do_not_contact = 0
-    AND t.segment != 'excluded'
+    AND {QUEUE_ELIGIBLE_WHERE}
     AND t.icp_score >= ?
 """
 
@@ -79,12 +80,13 @@ def export_email_batch(batch_id: str, db_path=DB_PATH) -> Path:
                 ) AS phone,
                 t.segment,
                 t.icp_score,
+                t.revenue_tier,
                 t.batch_id
             FROM targets t
             JOIN businesses b ON b.gers_id = t.business_id
             WHERE t.batch_id = ?
               AND {CAMPAIGN_TARGET_WHERE}
-            ORDER BY t.icp_score DESC, b.name
+            ORDER BY {QUEUE_TIER_ORDER}, t.icp_score DESC, b.name
             """,
             (*SENDABLE_VERIFY_STATUSES, *SENDABLE_VERIFY_STATUSES, batch_id, CALL_QUEUE_MIN_SCORE),
         ).fetchall()
@@ -128,6 +130,7 @@ def export_call_sheet(
                 ) AS email,
                 t.segment,
                 t.icp_score,
+                t.revenue_tier,
                 t.batch_id,
                 touch.step,
                 touch.notes AS touch_notes
@@ -139,7 +142,7 @@ def export_call_sheet(
               AND touch.completed_at IS NULL
               AND {CAMPAIGN_TARGET_WHERE}
               AND t.status NOT IN ('won', 'dead')
-            ORDER BY t.icp_score DESC, b.name
+            ORDER BY {QUEUE_TIER_ORDER}, t.icp_score DESC, b.name
             """,
             (date_str, CALL_QUEUE_MIN_SCORE),
         ).fetchall()

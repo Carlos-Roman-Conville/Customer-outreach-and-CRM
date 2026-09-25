@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { LeadDrawer } from '../components/LeadDrawer';
 
 export function CampaignsPage() {
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const { data: list } = useQuery({ queryKey: ['campaigns'], queryFn: api.campaigns });
   const { data: detail } = useQuery({
     queryKey: ['campaign', batchId],
@@ -49,8 +50,12 @@ export function CampaignsPage() {
               </thead>
               <tbody>
                 {detail.items.slice(0, 100).map((row) => (
-                  <tr key={row.business_id}>
-                    <td><Link to={`/leads?highlight=${row.business_id}`}>{row.name}</Link></td>
+                  <tr
+                    key={row.business_id}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setSelected(row.business_id)}
+                  >
+                    <td>{row.name}</td>
                     <td>{row.email || '—'}</td>
                     <td>{row.verify_status || 'unverified'}</td>
                     <td>{row.next_email || '—'}</td>
@@ -64,6 +69,8 @@ export function CampaignsPage() {
           )}
         </div>
       </div>
+
+      <LeadDrawer id={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

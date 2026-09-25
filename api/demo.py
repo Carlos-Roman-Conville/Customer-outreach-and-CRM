@@ -46,6 +46,13 @@ def scrub_address(address: str | None, business_id: str) -> str | None:
     return f"{num} Demo Street"
 
 
+def scrub_signal_detail(detail: str | None, business_id: str) -> str | None:
+    """Scrub signal detail URLs/handles that would leak identity in demo mode."""
+    if not detail or not DEMO_MODE:
+        return detail
+    return _hash_label(business_id + (detail[:32] if detail else ""), "Signal")
+
+
 def demo_flag() -> bool:
     return DEMO_MODE
 

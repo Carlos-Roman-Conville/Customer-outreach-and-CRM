@@ -15,8 +15,20 @@ def get_queue(
     south: float | None = None,
     east: float | None = None,
     north: float | None = None,
+    category: list[str] | None = Query(None),
+    county: str | None = None,
 ):
-    return {"items": fetch_queue(limit, west, south, east, north)}
+    return {
+        "items": fetch_queue(
+            limit,
+            west,
+            south,
+            east,
+            north,
+            categories=category,
+            county=county,
+        )
+    }
 
 
 @router.post("/queue/{business_id}/log")
@@ -28,6 +40,7 @@ def log_disposition(business_id: str, body: DispositionIn):
             notes=body.notes,
             callback_days=body.callback_days,
             callback_date=body.callback_date,
+            discovery=body.discovery.model_dump(exclude_none=True) if body.discovery else None,
             changed_by=current_user_id(),
         )
         return result

@@ -5,13 +5,15 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from category_tiers import QUEUE_ELIGIBLE_WHERE
 from config import CALL_QUEUE_MIN_SCORE, SENDABLE_VERIFY_STATUSES
 from db import DB_PATH, connect, init_db, insert_touch, utc_now
 
-CAMPAIGN_TARGET_WHERE = """
+CAMPAIGN_TARGET_WHERE = f"""
     t.do_not_contact = 0
     AND t.status NOT IN ('won', 'dead')
-    AND t.segment != 'excluded'
+    AND t.unsubscribed_at IS NULL
+    AND {QUEUE_ELIGIBLE_WHERE}
     AND t.icp_score >= ?
 """
 

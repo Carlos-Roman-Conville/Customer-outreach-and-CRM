@@ -35,7 +35,7 @@ Open **http://127.0.0.1:5173** · API docs at **http://127.0.0.1:8000/docs**
 |------|---------|
 | Dashboard | KPIs, activity chart, email health |
 | Call Mode | Full-screen dialer UX, keyboard dispositions 1–5 |
-| Territory Map | MapLibre heatmap + load viewport as call queue |
+| Territory Map | County Overview choropleth + Hunt (map/roster) + Cadence + Campaign overlays; Work this territory → Call Mode |
 | Lead Database | Search/filter 141k leads, detail drawer |
 | Email Campaigns | Batch list, verify status, cadence steps |
 | Pipeline Board | Kanban New → Won/Dead |

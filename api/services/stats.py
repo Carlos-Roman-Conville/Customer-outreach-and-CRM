@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from api.demo import demo_stats_overlay
+from category_tiers import QUEUE_ELIGIBLE_WHERE
 from config import CALL_QUEUE_MIN_SCORE, DEMO_STATS
 from db import connect
 
@@ -18,9 +19,9 @@ def get_stats() -> dict:
     week_start = _week_start()
     with connect() as conn:
         contactable = conn.execute(
-            """
+            f"""
             SELECT COUNT(*) FROM targets t
-            WHERE t.segment != 'excluded'
+            WHERE {QUEUE_ELIGIBLE_WHERE}
               AND t.icp_score >= ?
               AND t.do_not_contact = 0
               AND EXISTS (

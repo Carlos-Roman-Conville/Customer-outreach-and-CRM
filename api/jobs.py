@@ -72,6 +72,9 @@ def start_job(kind: str, limit: int | None = None) -> dict:
     elif kind == "verify":
         from verify import verify_emails
         target = verify_emails
+    elif kind == "signals":
+        from signals import scan_business_sites
+        target = scan_business_sites
     else:
         raise ValueError(f"Unknown job kind: {kind}")
 
@@ -114,6 +117,18 @@ def enrichment_progress() -> dict:
             """
         ).fetchone()[0]
         total_biz = conn.execute("SELECT COUNT(*) FROM businesses").fetchone()[0]
+        sites_total = conn.execute(
+            """
+            SELECT COUNT(*) FROM businesses
+            WHERE website IS NOT NULL AND TRIM(website) != ''
+            """
+        ).fetchone()[0]
+        sites_scanned = conn.execute(
+            "SELECT COUNT(*) FROM businesses WHERE site_scanned_at IS NOT NULL"
+        ).fetchone()[0]
+        booking_detected = conn.execute(
+            "SELECT COUNT(*) FROM businesses WHERE booking_platform IS NOT NULL"
+        ).fetchone()[0]
 
     job = latest_job()
     return {
@@ -123,6 +138,9 @@ def enrichment_progress() -> dict:
         "websites_discovered": int(websites),
         "businesses_total": int(total_biz),
         "verification_pct": round(emails_verified / emails_total * 100, 1) if emails_total else 0,
+        "sites_total": int(sites_total),
+        "sites_scanned": int(sites_scanned),
+        "booking_detected": int(booking_detected),
         "latest_job": job,
     }
 

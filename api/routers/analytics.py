@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from category_tiers import QUEUE_ELIGIBLE_WHERE
+from config import CALL_QUEUE_MIN_SCORE
 from db import connect
 
 router = APIRouter()
@@ -9,16 +11,16 @@ router = APIRouter()
 def icp_deciles():
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             WITH scored AS (
                 SELECT t.icp_score,
                        CASE WHEN t.status = 'won' THEN 1 ELSE 0 END AS won
                 FROM targets t
-                WHERE t.segment != 'excluded' AND t.icp_score >= 25
+                WHERE {QUEUE_ELIGIBLE_WHERE} AND t.icp_score >= ?
             ),
             bucketed AS (
                 SELECT
-                    CAST((icp_score - 25) / 10 AS INTEGER) AS decile_bucket,
+                    CAST((icp_score - ?) / 10 AS INTEGER) AS decile_bucket,
                     COUNT(*) AS total,
                     SUM(won) AS wins
                 FROM scored
@@ -29,7 +31,8 @@ def icp_deciles():
             FROM bucketed
             ORDER BY decile_bucket DESC
             LIMIT 12
-            """
+            """,
+            (CALL_QUEUE_MIN_SCORE, CALL_QUEUE_MIN_SCORE),
         ).fetchall()
     return {"items": [dict(r) for r in rows]}
 
@@ -55,16 +58,71 @@ def connect_by_hour():
 def segment_funnel():
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT segment,
                    COUNT(*) AS total,
                    SUM(CASE WHEN status = 'working' THEN 1 ELSE 0 END) AS working,
                    SUM(CASE WHEN status = 'meeting' THEN 1 ELSE 0 END) AS meeting,
                    SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) AS won
-            FROM targets
-            WHERE segment != 'excluded'
+            FROM targets t
+            WHERE {QUEUE_ELIGIBLE_WHERE}
             GROUP BY segment
             ORDER BY total DESC
             """
         ).fetchall()
     return {"items": [dict(r) for r in rows]}
+
+
+@router.get("/analytics/discovery")
+def discovery_analytics():
+    with connect() as conn:
+        after_hours = conn.execute(
+            """
+            SELECT after_hours AS key, COUNT(*) AS count
+            FROM discovery
+            WHERE after_hours IS NOT NULL
+            GROUP BY after_hours
+            ORDER BY count DESC
+            """
+        ).fetchall()
+        missed_calls = conn.execute(
+            """
+            SELECT missed_calls AS key, COUNT(*) AS count
+            FROM discovery
+            WHERE missed_calls IS NOT NULL
+            GROUP BY missed_calls
+            ORDER BY count DESC
+            """
+        ).fetchall()
+        hiring = conn.execute(
+            """
+            SELECT hiring_front_desk AS key, COUNT(*) AS count
+            FROM discovery
+            WHERE hiring_front_desk IS NOT NULL
+            GROUP BY hiring_front_desk
+            ORDER BY count DESC
+            """
+        ).fetchall()
+        avg_spend = conn.execute(
+            "SELECT AVG(answering_spend) AS avg FROM discovery WHERE answering_spend IS NOT NULL"
+        ).fetchone()["avg"]
+        booking_platforms = conn.execute(
+            """
+            SELECT booking_platform AS key, COUNT(*) AS count
+            FROM businesses
+            WHERE booking_platform IS NOT NULL
+            GROUP BY booking_platform
+            ORDER BY count DESC
+            LIMIT 15
+            """
+        ).fetchall()
+        discovery_total = conn.execute("SELECT COUNT(*) FROM discovery").fetchone()[0]
+
+    return {
+        "discovery_total": int(discovery_total),
+        "after_hours": [dict(r) for r in after_hours],
+        "missed_calls": [dict(r) for r in missed_calls],
+        "hiring_front_desk": [dict(r) for r in hiring],
+        "avg_answering_spend": round(float(avg_spend), 2) if avg_spend is not None else None,
+        "booking_platforms": [dict(r) for r in booking_platforms],
+    }

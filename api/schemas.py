@@ -19,6 +19,19 @@ class DispositionIn(BaseModel):
     notes: str = ""
     callback_days: int = 2
     callback_date: Optional[str] = None
+    discovery: Optional["DiscoveryIn"] = None
+
+
+class DiscoveryIn(BaseModel):
+    after_hours: Optional[str] = None
+    current_tool: Optional[str] = None
+    hiring_front_desk: Optional[int] = None
+    missed_calls: Optional[str] = None
+    answering_spend: Optional[float] = None
+
+
+class DiscoveryPatch(DiscoveryIn):
+    pass
 
 
 class StatusPatch(BaseModel):
@@ -42,5 +55,5 @@ class SavedViewIn(BaseModel):
 
 
 class EnrichStartIn(BaseModel):
-    kind: str = Field(default="verify", pattern="^(enrich|verify)$")
+    kind: str = Field(default="verify", pattern="^(enrich|verify|signals)$")
     limit: Optional[int] = None

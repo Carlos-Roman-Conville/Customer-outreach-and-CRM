@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 
+from category_tiers import QUEUE_ELIGIBLE_WHERE, QUEUE_ORDER_BY
 from services.dispositions import DISPOSITIONS, record_disposition
 from db import DB_PATH, connect, init_db
 from config import CALL_QUEUE_MIN_SCORE
@@ -31,6 +32,7 @@ def _fetch_queue(limit: int, db_path=DB_PATH, bbox: tuple | None = None):
                 t.business_id,
                 t.segment,
                 t.icp_score,
+                t.revenue_tier,
                 t.status,
                 b.name,
                 b.category,
@@ -70,7 +72,7 @@ def _fetch_queue(limit: int, db_path=DB_PATH, bbox: tuple | None = None):
             JOIN businesses b ON b.gers_id = t.business_id
             WHERE t.do_not_contact = 0
               AND t.status NOT IN ('won', 'dead')
-              AND t.segment != 'excluded'
+              AND {QUEUE_ELIGIBLE_WHERE}
               AND t.icp_score >= ?
               AND EXISTS (
                   SELECT 1 FROM contacts c
@@ -79,8 +81,7 @@ def _fetch_queue(limit: int, db_path=DB_PATH, bbox: tuple | None = None):
               {bbox_clause}
             ORDER BY
                 CASE WHEN callback_due IS NOT NULL AND callback_due <= ? THEN 0 ELSE 1 END,
-                t.icp_score DESC,
-                b.name ASC
+                {QUEUE_ORDER_BY}
             LIMIT ?
             """,
             params,
@@ -105,7 +106,7 @@ def show_queue(limit: int = 40, db_path=DB_PATH) -> None:
         prior = row["last_disposition"] or "none"
         print(f"\n[{idx}] {row['name']}")
         print(f"    ID: {row['business_id']}")
-        print(f"    Segment: {row['segment']} | Score: {row['icp_score']}")
+        print(f"    Tier: {row['revenue_tier']} | Segment: {row['segment']} | Score: {row['icp_score']}")
         print(f"    Phone: {row['phone'] or 'n/a'}")
         print(f"    Prior call: {prior}")
 

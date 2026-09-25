@@ -1,6 +1,7 @@
 """Campaign batch endpoints."""
 from __future__ import annotations
 
+from category_tiers import QUEUE_ELIGIBLE_WHERE, QUEUE_TIER_ORDER
 from config import CALL_QUEUE_MIN_SCORE, SENDABLE_VERIFY_STATUSES
 from db import connect
 from api.demo import scrub_email, scrub_name
@@ -22,7 +23,8 @@ def list_campaigns() -> list[dict]:
                 ) THEN 1 ELSE 0 END) AS sendable
             FROM targets t
             WHERE t.batch_id IS NOT NULL
-              AND t.segment != 'excluded'
+              AND t.unsubscribed_at IS NULL
+              AND {QUEUE_ELIGIBLE_WHERE}
               AND t.icp_score >= ?
             GROUP BY t.batch_id
             ORDER BY t.batch_id
@@ -68,8 +70,9 @@ def campaign_detail(batch_id: str) -> dict:
             FROM targets t
             JOIN businesses b ON b.gers_id = t.business_id
             WHERE t.batch_id = ?
-              AND t.segment != 'excluded'
-            ORDER BY t.icp_score DESC
+              AND t.unsubscribed_at IS NULL
+              AND {QUEUE_ELIGIBLE_WHERE}
+            ORDER BY {QUEUE_TIER_ORDER}, t.icp_score DESC
             """,
             (batch_id,),
         ).fetchall()

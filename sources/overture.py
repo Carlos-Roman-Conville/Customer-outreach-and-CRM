@@ -1,16 +1,15 @@
 """
-Pull Overture Maps places for the Philadelphia metro and load into SQLite.
+Pull Overture Maps places for PA, NJ, and DE and load into SQLite.
 """
 from __future__ import annotations
 
-import json
 import re
-from typing import Any, Iterator
+from typing import Any
 
 import duckdb
 
-from config import METRO_BBOX, METRO_COUNTIES, OVERTURE_S3_REGION, OVERTURE_STAC_URL
-from db import DB_PATH, bulk_upsert_businesses, bulk_upsert_contacts, connect, init_db
+from config import OVERTURE_S3_REGION, OVERTURE_STAC_URL, TRISTATE_BBOX, TRISTATE_STATES
+from db import DB_PATH, bulk_upsert_businesses, bulk_upsert_contacts, init_db
 
 
 def _normalize_phone(value: str) -> str | None:
@@ -31,12 +30,6 @@ def _normalize_email(value: str) -> str | None:
     if "@" not in email:
         return None
     return email
-
-
-def _first(values: list | None) -> str | None:
-    if not values:
-        return None
-    return str(values[0]).strip() or None
 
 
 def _list_values(values: list | None) -> list[str]:
@@ -61,8 +54,26 @@ def _get_latest_release(con: duckdb.DuckDBPyConnection) -> str:
     return str(row[0])
 
 
-def _county_union_sql(release: str) -> str:
-    county_names = ", ".join(f"'{name}'" for name in sorted(METRO_COUNTIES))
+def _state_regions_sql(release: str) -> str:
+    regions = ", ".join(f"'{r}'" for r in TRISTATE_STATES)
+    return f"""
+        SELECT
+            names.primary AS state_name,
+            region,
+            geometry
+        FROM read_parquet(
+            's3://overturemaps-us-west-2/release/{release}/theme=divisions/type=division_area/*',
+            filename=true,
+            hive_partitioning=1
+        )
+        WHERE subtype = 'region'
+          AND country = 'US'
+          AND region IN ({regions})
+    """
+
+
+def _county_areas_sql(release: str) -> str:
+    regions = ", ".join(f"'{r}'" for r in TRISTATE_STATES)
     return f"""
         SELECT
             names.primary AS county_name,
@@ -75,15 +86,14 @@ def _county_union_sql(release: str) -> str:
         )
         WHERE subtype = 'county'
           AND country = 'US'
-          AND region IN ('US-PA', 'US-NJ')
-          AND names.primary IN ({county_names})
+          AND region IN ({regions})
     """
 
 
 def pull_overture(db_path=DB_PATH, batch_size: int = 500) -> dict[str, int]:
-    """Download metro POIs from Overture and upsert into SQLite."""
+    """Download tristate POIs from Overture and upsert into SQLite."""
     print("=" * 60)
-    print("PULL: Overture Maps places (8-county metro)")
+    print("PULL: Overture Maps places (PA + NJ + DE)")
     print("=" * 60)
 
     init_db(db_path)
@@ -97,10 +107,13 @@ def pull_overture(db_path=DB_PATH, batch_size: int = 500) -> dict[str, int]:
     release = _get_latest_release(con)
     print(f"  Overture release: {release}")
 
-    bbox = METRO_BBOX
+    bbox = TRISTATE_BBOX
     places_sql = f"""
-        WITH metro_counties AS (
-            {_county_union_sql(release)}
+        WITH tristate_regions AS (
+            {_state_regions_sql(release)}
+        ),
+        county_areas AS (
+            {_county_areas_sql(release)}
         ),
         raw_places AS (
             SELECT
@@ -131,14 +144,38 @@ def pull_overture(db_path=DB_PATH, batch_size: int = 500) -> dict[str, int]:
               AND bbox.ymin BETWEEN {bbox['south']} AND {bbox['north']}
         )
         SELECT
-            p.*,
+            p.gers_id,
+            p.name,
+            p.category,
+            p.basic_category,
+            p.taxonomy,
+            p.address,
+            p.city,
+            p.state,
+            p.zip,
+            p.confidence,
+            p.websites,
+            p.phones,
+            p.emails,
+            p.socials,
+            p.lat,
+            p.lng,
+            p.geometry,
+            s.state_name,
             c.county_name AS county
         FROM raw_places p
-        JOIN metro_counties c
-          ON ST_Contains(c.geometry, p.geometry)
+        JOIN tristate_regions s
+          ON ST_Contains(s.geometry, p.geometry)
+        LEFT JOIN county_areas c
+          ON c.region = s.region
+         AND ST_Contains(c.geometry, p.geometry)
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY p.gers_id
+            ORDER BY c.county_name NULLS LAST
+        ) = 1
     """
 
-    print("  Querying Overture (this may take a few minutes)...")
+    print("  Querying Overture (this may take several minutes)...")
     result = con.execute(places_sql)
     columns = [desc[0] for desc in result.description]
 
@@ -182,6 +219,10 @@ def pull_overture(db_path=DB_PATH, batch_size: int = 500) -> dict[str, int]:
             if county and county.endswith(" County"):
                 county = county[:-7]
 
+            state = record.get("state")
+            if state and state.startswith("US-"):
+                state = state[3:]
+
             business = {
                 "gers_id": gers_id,
                 "name": record.get("name") or "Unknown",
@@ -190,7 +231,7 @@ def pull_overture(db_path=DB_PATH, batch_size: int = 500) -> dict[str, int]:
                 "taxonomy": record.get("taxonomy"),
                 "address": record.get("address"),
                 "city": record.get("city"),
-                "state": record.get("state"),
+                "state": state,
                 "zip": record.get("zip"),
                 "county": county,
                 "lat": record.get("lat"),

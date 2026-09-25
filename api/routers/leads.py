@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from api.deps import current_user_id
-from api.schemas import DealPatch, NoteIn, StatusPatch
-from api.services.leads import add_note, get_lead_detail, search_leads, update_deal
+from api.schemas import DealPatch, DiscoveryPatch, NoteIn, StatusPatch
+from api.services.leads import add_note, get_lead_detail, patch_discovery, search_leads, update_deal
 from services.dispositions import patch_lead_status
 
 router = APIRouter()
@@ -12,12 +12,13 @@ router = APIRouter()
 def list_leads(
     q: str | None = None,
     county: str | None = None,
-    category: str | None = None,
+    category: list[str] | None = Query(None),
     segment: str | None = None,
     status: str | None = None,
     min_score: float | None = None,
     has_email: bool | None = None,
     has_phone: bool | None = None,
+    booking: str | None = None,
     west: float | None = None,
     south: float | None = None,
     east: float | None = None,
@@ -27,7 +28,7 @@ def list_leads(
 ):
     return search_leads(
         q=q, county=county, category=category, segment=segment, status=status,
-        min_score=min_score, has_email=has_email, has_phone=has_phone,
+        min_score=min_score, has_email=has_email, has_phone=has_phone, booking=booking,
         west=west, south=south, east=east, north=north,
         page=page, page_size=page_size,
     )
@@ -53,6 +54,18 @@ def update_status(business_id: str, body: StatusPatch):
 @router.post("/leads/{business_id}/notes")
 def create_note(business_id: str, body: NoteIn):
     return add_note(business_id, body.body, current_user_id())
+
+
+@router.patch("/leads/{business_id}/discovery")
+def update_discovery(business_id: str, body: DiscoveryPatch):
+    try:
+        return patch_discovery(
+            business_id,
+            body.model_dump(exclude_none=True),
+            current_user_id(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.patch("/leads/{business_id}/deal")

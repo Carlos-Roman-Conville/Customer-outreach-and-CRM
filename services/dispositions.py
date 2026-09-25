@@ -13,6 +13,7 @@ from db import (
     insert_status_history,
     insert_touch,
     upsert_deal,
+    upsert_discovery,
     utc_now,
 )
 
@@ -73,6 +74,7 @@ def record_disposition(
     notes: str = "",
     callback_days: int = 2,
     callback_date: str | None = None,
+    discovery: dict | None = None,
     changed_by: int | None = None,
     db_path=DB_PATH,
 ) -> dict:
@@ -111,6 +113,9 @@ def record_disposition(
         update_target_status(
             conn, business_id, new_status, do_not_contact, changed_by=changed_by
         )
+
+        if discovery:
+            upsert_discovery(conn, business_id, discovery, user_id=changed_by)
 
         if disposition == "callback":
             cb_date = callback_date or (date.today() + timedelta(days=callback_days)).isoformat()

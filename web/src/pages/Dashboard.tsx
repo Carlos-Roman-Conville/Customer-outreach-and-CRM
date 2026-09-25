@@ -18,12 +18,30 @@ export function Dashboard() {
       </p>
 
       <div className="kpi-grid">
-        <div className="kpi-card"><div className="label">Total leads</div><div className="value">{Number(stats.total_leads).toLocaleString()}</div></div>
-        <div className="kpi-card"><div className="label">Contactable</div><div className="value">{Number(stats.contactable_leads).toLocaleString()}</div></div>
-        <div className="kpi-card"><div className="label">Contacted this week</div><div className="value">{Number(stats.contacted_this_week)}</div></div>
-        <div className="kpi-card"><div className="label">Meetings</div><div className="value">{Number(stats.meetings)}</div></div>
-        <div className="kpi-card"><div className="label">Win rate</div><div className="value">{Number(stats.win_rate)}%</div></div>
-        <div className="kpi-card"><div className="label">Pipeline value</div><div className="value">${Number(stats.pipeline_value).toLocaleString()}</div></div>
+        <div className="kpi-card">
+          <div className="label">Total leads</div>
+          <div className="value">{Number(stats.total_leads).toLocaleString()}</div>
+        </div>
+        <Link to="/leads?has_phone=1&min_score=25" className="kpi-card kpi-card-link">
+          <div className="label">Contactable</div>
+          <div className="value">{Number(stats.contactable_leads).toLocaleString()}</div>
+        </Link>
+        <Link to="/call" className="kpi-card kpi-card-link">
+          <div className="label">Contacted this week</div>
+          <div className="value">{Number(stats.contacted_this_week)}</div>
+        </Link>
+        <Link to="/pipeline?stage=meeting" className="kpi-card kpi-card-link">
+          <div className="label">Meetings</div>
+          <div className="value">{Number(stats.meetings)}</div>
+        </Link>
+        <div className="kpi-card">
+          <div className="label">Win rate</div>
+          <div className="value">{Number(stats.win_rate)}%</div>
+        </div>
+        <div className="kpi-card">
+          <div className="label">Pipeline value</div>
+          <div className="value">${Number(stats.pipeline_value).toLocaleString()}</div>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
